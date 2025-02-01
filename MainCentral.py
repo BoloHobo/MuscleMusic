@@ -80,7 +80,8 @@ def begin_monitoring():
             device_emg_data = {}
             for dev in device_dict.keys():
                 device_emg_data[dev] = []
-            output = mido.open_output('virtualMidi 1')
+            # print(mido.get_output_names())
+            output = mido.open_output('virtualMidi Port 1')
             time_start = datetime.now().timestamp()
             print(f'Starting a 30 second monitoring window from {time_start}')
             while True:

@@ -2,12 +2,12 @@ import logging
 import sys
 import os
 import PySimpleGUI as sg
-project_dir = os.path.dirname(os.path.dirname(__file__))
-package_dir = os.path.join(project_dir, 'uMyo_python_tools-main')
+project_dir = os.path.dirname(__file__)
+package_dir = os.path.join(project_dir, 'uMyo_python_tools')
 sys.path.append(package_dir)
 import umyo_parser
-from serial.tools import list_ports
 import serial
+from serial.tools import list_ports
 import mido
 import time
 from datetime import datetime

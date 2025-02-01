@@ -3,7 +3,7 @@ import sys
 import os
 import PySimpleGUI as sg
 project_dir = os.path.dirname(__file__)
-package_dir = os.path.join(project_dir, 'uMyo_python_tools')
+package_dir = os.path.join(project_dir, 'uMyo_tools')
 sys.path.append(package_dir)
 import umyo_parser
 import serial

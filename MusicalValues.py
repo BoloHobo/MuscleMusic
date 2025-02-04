@@ -10,6 +10,10 @@ class Note:
     # def note_number(self):
     #     return self.note_number
 
+    @property
+    def scale_note(self):
+        return f'{self.note}{self.octave}'
+
     def get_scale_notes(self, scale_type):
 
         root_index = self.notes.index(self.note)

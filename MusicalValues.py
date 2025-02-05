@@ -26,14 +26,20 @@ class Note:
 
         return scale_notes
 
-    def get_triad_chord(self, chord_type, note=None):
+    def get_triad_chord(self, chord_type, note=None, rev=False):
         # Define intervals for Major and Minor chords
         if not note:
             note = self.note
-        intervals = {
+        if not rev:
+            intervals = {
             'major': [0, 4, 7],  # Root, Major third, Perfect fifth
             'minor': [0, 3, 7]  # Root, Minor third, Perfect fifth
-        }
+            }
+        else:
+            intervals = {
+                'major': [-7, -4, 0],  # Root, Major third, Perfect fifth
+                'minor': [-7, -3, 0]  # Root, Minor third, Perfect fifth
+            }
         root_index = self.notes.index(note)
 
         # Calculate the triad notes
@@ -41,7 +47,7 @@ class Note:
 
         return chord_notes
 
-    def get_related_chords(self, chord_type):
+    def get_related_chords(self, chord_type, rev=False):
 
         # Calculate primary and secondary chords
         if self.note in self.notes:
@@ -62,11 +68,11 @@ class Note:
 
             primary_triads = []
             for chord_note in primary:
-                primary_triads.append(self.get_triad_chord(chord_type, chord_note[:-1]))
+                primary_triads.append(self.get_triad_chord(chord_type, chord_note[:-1], rev))
 
             secondary_triads = []
             for chord_note in secondary:
-                secondary_triads.append(self.get_triad_chord(chord_type, chord_note[:-1]))
+                secondary_triads.append(self.get_triad_chord(chord_type, chord_note[:-1], rev))
 
             return primary, secondary, primary_triads, secondary_triads
         else:

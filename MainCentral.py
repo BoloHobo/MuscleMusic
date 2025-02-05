@@ -18,9 +18,9 @@ from MusicalValues import Note
 import asyncio
 
 def init_globals():
-    global notes_dict, scale, octave, R_forearm, R_bicep, R_back, L_forearm, L_bicep, L_back, device_dict
-    scale = 'C'
-    octave = 3
+    global notes_dict, scale, octave, R_forearm, R_bicep, R_back, L_forearm, L_bicep, L_back, device_dict, scale
+    root = 'F'
+    octave = 2
     device_dict = {3709404326: {'Device ID': 3709404326, 'Note': '', 'Muscle': 'Right Forearm', 'Active': False, 'Flourish State': False, 'Channel': 2},
                    1723834707: {'Device ID': 1723834707, 'Note': '', 'Muscle': 'Left Forearm', 'Active': False, 'Flourish State': False,'Channel': 3},
                    1192667876: {'Device ID': 1192667876, 'Note': '', 'Muscle': 'Right Bicep', 'Active': False, 'Flourish State': False,'Channel': 4},
@@ -28,8 +28,9 @@ def init_globals():
                    2821543978: {'Device ID': 2821543978, 'Note': '', 'Muscle': 'Right Lat', 'Active': False, 'Flourish State': False,'Channel': 6},
                    2497006410: {'Device ID': 2497006410, 'Note': '', 'Muscle': 'Left Lat', 'Active': False, 'Flourish State': False,'Channel': 7}}
 
-    base_note = Note(scale, octave)
-    primary_chords, secondary_chords, primary_triads, secondary_triads = base_note.get_related_chords('major')
+    base_note = Note(root, octave)
+    scale = 'major'
+    primary_chords, secondary_chords, primary_triads, secondary_triads = base_note.get_related_chords(scale)
     # R_forearm['Note'], R_bicep['Note'], R_back['Note'] = primary_chords
     # L_forearm['Note'], L_bicep['Note'], L_back['Note'] = secondary_chords
     chords = primary_chords + secondary_chords
@@ -48,7 +49,7 @@ def init_globals():
             notes_dict[f'{note_selection}{octave_range - 2}'] = number
 
 def begin_monitoring():
-    global device_dict
+    global device_dict, scale
     monitoring_layout = [[sg.Button('Start', key='-start-')],
                          [sg.Button('Stop', key='-stop-')]]
     monitoring_window = sg.Window('Monitoring Window', monitoring_layout)
@@ -78,6 +79,7 @@ def begin_monitoring():
             total_uMyo_emg = []
             device_emg_data = {}
             device_const_stream = {}
+            reverse_notes = False
             for dev in device_dict.keys():
                 device_emg_data[dev] = []
                 device_const_stream[dev] = 0
@@ -132,14 +134,26 @@ def begin_monitoring():
                                             volume = int(math.sqrt((127**2)*(abs(vol_ratio))))
                                             if volume >= 127:
                                                 volume = 127
-                                            modify_note('control_change', active_device['Channel'], output, control_val=7, value=volume)
+                                            # modify_note('control_change', active_device['Channel'], output, control_val=7, value=volume)
+
+
 
                                             # Flip switch to track consecutive flexion sustain
                                             device_const_stream[device_id] += 1
                                             if device_const_stream[device_id] > 500:
-                                                flourish(active_device['Note'], active_device['Channel'], output)
+                                                # Signal changes based on sensor orientation
+                                                if  dev.pitch < 0:
+                                                    scale = 'minor'
+                                                else:
+                                                    scale = 'major'
+                                                roll = (-1 if dev.roll<0 else 1) * (dev.roll % 3000)
+                                                # print(roll)
+                                                # if roll > 0:
+                                                #     reverse_notes = False
+                                                # else:
+                                                #     reverse_notes = True
+                                                flourish(active_device['Note'], active_device['Channel'], output, scale, reverse_notes)
                                                 ser.reset_input_buffer()
-
                                                 device_emg_data[active_device['Device ID']] = []
 
 
@@ -161,12 +175,12 @@ def begin_monitoring():
             output.close()
     return total_uMyo_emg
 
-def play_note(note, channel, output_reader, velocity=100):
+def play_note(note, channel, output_reader, velocity=127):
     note_on = mido.Message('note_on', note=notes_dict[note], channel=channel, velocity=velocity)
     # with mido.open_output('virtualMidi 1', autoreset=True) as output:
     output_reader.send(note_on)
 
-def turn_note_off(note, channel, output_reader, velocity=100):
+def turn_note_off(note, channel, output_reader, velocity=127):
     note_off = mido.Message('note_off', note=notes_dict[note], channel=channel, velocity=velocity)
     # with mido.open_output('virtualMidi 1', autoreset=True) as output:
     output_reader.send(note_off)
@@ -176,13 +190,13 @@ def modify_note(change_type, channel, output_reader, control_val=None, value=0):
         note_mod = mido.Message(change_type, channel=channel, control=control_val, value=value)
     output_reader.send(note_mod)
 
-def flourish(base_note, channel, output):
-    pivot_root = base_note[0]
+def flourish(base_note, channel, output, pivot_scale, flip_melody):
+    pivot_key = base_note[0]
     pivot_octave = int(base_note[-1])
-    pivot_scale = Note(pivot_root, pivot_octave)
-    pivot_primary, pivot_secondary, pivot_primary_triad, pivot_secondary_triad = pivot_scale.get_related_chords('minor')
+    pivot_note = Note(pivot_key, pivot_octave)
+    pivot_primary, pivot_secondary, pivot_primary_triad, pivot_secondary_triad = pivot_note.get_related_chords(pivot_scale, flip_melody)
     # notes_queue = []
-    first_primary_triad = pivot_primary_triad[0]
+    first_primary_triad = reversed(pivot_primary_triad[0]) if flip_melody else pivot_primary_triad[0]
     for note in first_primary_triad:
         # for note in chord:
         play_note(note, channel, output)

@@ -5,6 +5,8 @@ import os
 import PySimpleGUI as sg
 from numpy.ma.extras import average
 
+from TestMidi import notes_dict
+
 project_dir = os.path.dirname(__file__)
 package_dir = os.path.join(project_dir, 'uMyo_tools')
 sys.path.append(package_dir)
@@ -21,12 +23,18 @@ def init_globals():
     global notes_dict, scale, octave, R_forearm, R_bicep, R_back, L_forearm, L_bicep, L_back, device_dict, scale
     root = 'F'
     octave = 2
-    device_dict = {3709404326: {'Device ID': 3709404326, 'Note': '', 'Muscle': 'Right Forearm', 'Active': False, 'Flourish State': False, 'Channel': 2},
-                   1723834707: {'Device ID': 1723834707, 'Note': '', 'Muscle': 'Left Forearm', 'Active': False, 'Flourish State': False,'Channel': 3},
-                   1192667876: {'Device ID': 1192667876, 'Note': '', 'Muscle': 'Right Bicep', 'Active': False, 'Flourish State': False,'Channel': 4},
-                   3369251029: {'Device ID': 3369251029, 'Note': '', 'Muscle': 'Left Bicep', 'Active': False, 'Flourish State': False,'Channel': 5},
-                   2821543978: {'Device ID': 2821543978, 'Note': '', 'Muscle': 'Right Lat', 'Active': False, 'Flourish State': False,'Channel': 6},
-                   2497006410: {'Device ID': 2497006410, 'Note': '', 'Muscle': 'Left Lat', 'Active': False, 'Flourish State': False,'Channel': 7}}
+    device_dict = {3709404326: {'Device ID': 3709404326, 'Note': '', 'Chord': [], 'Muscle': 'Right Forearm',
+                                'Active': False, 'Playing': False, 'Channel': 2},
+                   1723834707: {'Device ID': 1723834707, 'Note': '', 'Chord': [], 'Muscle': 'Left Forearm',
+                                'Active': False, 'Playing': False,'Channel': 3},
+                   1192667876: {'Device ID': 1192667876, 'Note': '', 'Chord': [], 'Muscle': 'Right Bicep',
+                                'Active': False, 'Playing': False,'Channel': 4},
+                   3369251029: {'Device ID': 3369251029, 'Note': '', 'Chord': [], 'Muscle': 'Left Bicep',
+                                'Active': False, 'Playing': False,'Channel': 5},
+                   2821543978: {'Device ID': 2821543978, 'Note': '', 'Chord': [], 'Muscle': 'Right Lat',
+                                'Active': False, 'Playing': False,'Channel': 6},
+                   2497006410: {'Device ID': 2497006410, 'Note': '', 'Chord': [], 'Muscle': 'Left Lat',
+                                'Active': False, 'Playing': False,'Channel': 7}}
 
     base_note = Note(root, octave)
     scale = 'major'
@@ -34,12 +42,15 @@ def init_globals():
     # R_forearm['Note'], R_bicep['Note'], R_back['Note'] = primary_chords
     # L_forearm['Note'], L_bicep['Note'], L_back['Note'] = secondary_chords
     chords = primary_chords + secondary_chords
-    # print(chords)
+    triads = primary_triads + secondary_triads
+    print(chords)
+    print(triads)
     chord_index = 0
     for device in device_dict.values():
         device['Note'] = chords[chord_index]
+        device['Chord'] = triads[chord_index]
         chord_index += 1
-    print(device_dict)
+    # print(device_dict)
     notes_dict = {}
     # Number of octaves
     for octave_range in range(2, 7):
@@ -47,7 +58,7 @@ def init_globals():
         for note_selection in base_note.notes:
             number = (base_note.notes.index(note_selection)) + (octave_range * 12)
             notes_dict[f'{note_selection}{octave_range - 2}'] = number
-
+    # print(notes_dict)
 def begin_monitoring():
     global device_dict, scale
     monitoring_layout = [[sg.Button('Start', key='-start-')],
@@ -80,12 +91,13 @@ def begin_monitoring():
             device_emg_data = {}
             device_const_stream = {}
             reverse_notes = False
+            musical_queue = []
             for dev in device_dict.keys():
                 device_emg_data[dev] = []
                 device_const_stream[dev] = 0
             print(device_emg_data)
             print(mido.get_output_names())
-            output = mido.open_output('virtualMidi 1')
+            output = mido.open_output('loopMIDI Port 1')
             # input = mido.open_input('virtualMidi 0')
             time_start = datetime.now().timestamp()
             print(f'Starting a 90 second monitoring window from {time_start}')
@@ -120,52 +132,51 @@ def begin_monitoring():
                                     buffer = device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']])-buffer_length:]
                                     # Checks if muscle is flexing based on buffer average
                                     buffer_value = sum(buffer)/len(buffer)
+                                    music_value = active_device['Chord']
+                                    active_device_count = 0
                                     if buffer_value > 300:
-                                        # Sends one note at a time based on muscle flexing
                                         if not active_device['Active']:
-                                            play_note(active_device['Note'], active_device['Channel'], output)
                                             active_device['Active'] = True
-                                        if active_device['Active']:
-                                            # Create volume buffer for normalization
-                                            max_emg_val = max(device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']])-1500:])
-                                            # min_emg_val = min(device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']])-1500:])
-                                            min_emg_val = 300
-                                            vol_ratio = (buffer_value - min_emg_val)/(max_emg_val - min_emg_val)
-                                            volume = int(math.sqrt((127**2)*(abs(vol_ratio))))
-                                            if volume >= 127:
-                                                volume = 127
-                                            # modify_note('control_change', active_device['Channel'], output, control_val=7, value=volume)
-
-
-
+                                        active_device_count = sum(1 for device_num, device_values in device_dict.items() if device_values['Active'])
+                                        if active_device_count <= 1:
+                                            if not active_device['Playing']:
+                                                play_note(music_value, active_device['Channel'], output)
+                                                active_device['Playing'] = True
+                                            # change_volume(device_emg_data, active_device, buffer_value, output)
                                             # Flip switch to track consecutive flexion sustain
                                             device_const_stream[device_id] += 1
                                             if device_const_stream[device_id] > 500:
-                                                # Signal changes based on sensor orientation
-                                                if  dev.pitch < 0:
-                                                    scale = 'minor'
-                                                else:
-                                                    scale = 'major'
-                                                roll = (-1 if dev.roll<0 else 1) * (dev.roll % 3000)
-                                                # print(roll)
-                                                # if roll > 0:
-                                                #     reverse_notes = False
-                                                # else:
-                                                #     reverse_notes = True
-                                                flourish(active_device['Note'], active_device['Channel'], output, scale, reverse_notes)
-                                                ser.reset_input_buffer()
-                                                device_emg_data[active_device['Device ID']] = []
+                                                add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
+                                        else:
+                                            musical_queue = [device_values['Chord'] for device_num, device_values in device_dict.items() if device_values['Playing']]
+                                            # for chord, channel in playing_notes:
+                                            #     turn_note_off(chord, channel, output)
+                                            # active_notes = [(device_values['Chord'], device_values['Channel']) for device_num, device_values in device_dict.items() if device_values['Active']]
+                                            # for chord, channel in active_notes:
+                                            if not active_device['Playing']:
+                                                musical_queue.append(active_device['Chord'])
+                                                active_device['Playing'] = True
+                                            print(musical_queue)
 
+                                            # for chord in musical_queue:
+                                            #     arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data[active_device['Device ID']])
 
-
+                                            # musical_queue.append(music_value)
+                                            # for music in musical_queue:
+                                            #     if not active_device['Playing']:
+                                            #         play_note(music, active_device['Channel'], output)
+                                            #         active_device['Playing'] = True
                                     else:
                                         if active_device['Active']:
-                                            turn_note_off(active_device['Note'], active_device['Channel'], output)
+                                            if active_device_count > 1:
+                                                del musical_queue[musical_queue.index(active_device['Chord'])]
+                                            turn_note_off(music_value, active_device['Channel'], output)
                                             device_const_stream[device_id] = 0
-                                            # active_device['Flourish State'] = False
                                             active_device['Active'] = False
+                                            active_device['Playing'] = False
                             except Exception as e:
                                 print(f'Error occurred: {e}')
+
 
                 else:
                     break
@@ -175,28 +186,41 @@ def begin_monitoring():
             output.close()
     return total_uMyo_emg
 
-def play_note(note, channel, output_reader, velocity=127):
-    note_on = mido.Message('note_on', note=notes_dict[note], channel=channel, velocity=velocity)
-    # with mido.open_output('virtualMidi 1', autoreset=True) as output:
-    output_reader.send(note_on)
+def play_note(music, channel, output_reader, velocity=127):
+    if isinstance(music, list):
+        chord = music
+        for note in chord:
+            note_on = mido.Message('note_on', note=notes_dict[note], channel=channel, velocity=velocity)
+            output_reader.send(note_on)
+        # time.sleep(.5)
+        # turn_note_off([chord[0], chord[2]], channel, output_reader, velocity)
+    else:
+        note_on = mido.Message('note_on', note=notes_dict[music], channel=channel, velocity=velocity)
+        output_reader.send(note_on)
 
-def turn_note_off(note, channel, output_reader, velocity=127):
-    note_off = mido.Message('note_off', note=notes_dict[note], channel=channel, velocity=velocity)
-    # with mido.open_output('virtualMidi 1', autoreset=True) as output:
-    output_reader.send(note_off)
+def turn_note_off(music, channel, output_reader, velocity=127):
+    if isinstance(music, list):
+        chord = music
+        for note in chord:
+            note_off = mido.Message('note_off', note=notes_dict[note], channel=channel, velocity=velocity)
+            output_reader.send(note_off)
+    else:
+        note_off = mido.Message('note_off', note=notes_dict[music], channel=channel, velocity=velocity)
+        output_reader.send(note_off)
 
 def modify_note(change_type, channel, output_reader, control_val=None, value=0):
     if control_val:
         note_mod = mido.Message(change_type, channel=channel, control=control_val, value=value)
     output_reader.send(note_mod)
 
-def flourish(base_note, channel, output, pivot_scale, flip_melody):
+def flourish(base_note, channel, output, pivot_scale, flip_melody=False):
     pivot_key = base_note[0]
     pivot_octave = int(base_note[-1])
     pivot_note = Note(pivot_key, pivot_octave)
     pivot_primary, pivot_secondary, pivot_primary_triad, pivot_secondary_triad = pivot_note.get_related_chords(pivot_scale, flip_melody)
     # notes_queue = []
     first_primary_triad = reversed(pivot_primary_triad[0]) if flip_melody else pivot_primary_triad[0]
+    # print(first_primary_triad)
     for note in first_primary_triad:
         # for note in chord:
         play_note(note, channel, output)
@@ -204,6 +228,41 @@ def flourish(base_note, channel, output, pivot_scale, flip_melody):
         turn_note_off(note, channel, output)
     return first_primary_triad
 
+def change_volume(device_emg_data, active_device, buffer_value, output):
+    # Create volume buffer for normalization
+    max_emg_val = max(
+        device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']]) - 1500:])
+    # min_emg_val = min(device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']])-1500:])
+    min_emg_val = 300
+    vol_ratio = (buffer_value - min_emg_val) / (max_emg_val - min_emg_val)
+    volume = int(math.sqrt((127 ** 2) * (abs(vol_ratio))))
+    if volume >= 127:
+        volume = 127
+    modify_note('control_change', active_device['Channel'], output, control_val=7, value=volume)
+
+def add_flourish(dev, active_device, output, ser, device_emg_data):
+    # Signal changes based on sensor orientation
+    if dev.pitch < 0:
+        scale = 'minor'
+    else:
+        scale = 'major'
+    # roll = (-1 if dev.roll<0 else 1) * (dev.roll % 3000)
+    # print(roll)
+    # if roll > 0:
+    #     reverse_notes = False
+    # else:
+    #     reverse_notes = True
+    flourish(active_device['Note'], active_device['Channel'], output, scale)
+    ser.reset_input_buffer()
+    device_emg_data[active_device['Device ID']] = []
+
+def arpeggiate(chord, channel, output, ser, device_emg_data, velocity=127):
+    for note in chord:
+        play_note(note, channel, output)
+        time.sleep(.5)
+        turn_note_off(note, channel, output)
+        ser.reset_input_buffer()
+        device_emg_data = []
 def main():
     init_globals()
     main_layout = [[sg.Button('Begin monitoring', key='-Begin-')],

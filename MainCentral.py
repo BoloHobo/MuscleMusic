@@ -144,15 +144,11 @@ def begin_monitoring():
                                                 active_device['Playing'] = True
                                             # change_volume(device_emg_data, active_device, buffer_value, output)
                                             # Flip switch to track consecutive flexion sustain
-                                            device_const_stream[device_id] += 1
-                                            if device_const_stream[device_id] > 500:
-                                                add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
+                                            # device_const_stream[device_id] += 1
+                                            # if device_const_stream[device_id] > 500:
+                                            #     add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
                                         else:
                                             musical_queue = [device_values['Chord'] for device_num, device_values in device_dict.items() if device_values['Playing']]
-                                            # for chord, channel in playing_notes:
-                                            #     turn_note_off(chord, channel, output)
-                                            # active_notes = [(device_values['Chord'], device_values['Channel']) for device_num, device_values in device_dict.items() if device_values['Active']]
-                                            # for chord, channel in active_notes:
                                             if not active_device['Playing']:
                                                 musical_queue.append(active_device['Chord'])
                                                 active_device['Playing'] = True
@@ -160,12 +156,6 @@ def begin_monitoring():
 
                                             # for chord in musical_queue:
                                             #     arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data[active_device['Device ID']])
-
-                                            # musical_queue.append(music_value)
-                                            # for music in musical_queue:
-                                            #     if not active_device['Playing']:
-                                            #         play_note(music, active_device['Channel'], output)
-                                            #         active_device['Playing'] = True
                                     else:
                                         if active_device['Active']:
                                             if active_device_count > 1:

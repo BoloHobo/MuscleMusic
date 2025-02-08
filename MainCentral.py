@@ -5,8 +5,6 @@ import os
 import PySimpleGUI as sg
 from numpy.ma.extras import average
 
-from TestMidi import notes_dict
-
 project_dir = os.path.dirname(__file__)
 package_dir = os.path.join(project_dir, 'uMyo_tools')
 sys.path.append(package_dir)
@@ -17,11 +15,10 @@ import mido
 import time
 from datetime import datetime
 from MusicalValues import Note
-import asyncio
 
 def init_globals():
     global notes_dict, scale, octave, R_forearm, R_bicep, R_back, L_forearm, L_bicep, L_back, device_dict, scale
-    root = 'F'
+    root = 'C'
     octave = 2
     device_dict = {3709404326: {'Device ID': 3709404326, 'Note': '', 'Chord': [], 'Muscle': 'Right Forearm',
                                 'Active': False, 'Playing': False, 'Channel': 2},
@@ -36,9 +33,9 @@ def init_globals():
                    2497006410: {'Device ID': 2497006410, 'Note': '', 'Chord': [], 'Muscle': 'Left Lat',
                                 'Active': False, 'Playing': False,'Channel': 7}}
 
-    base_note = Note(root, octave)
+    key = Note(root, octave)
     scale = 'major'
-    primary_chords, secondary_chords, primary_triads, secondary_triads = base_note.get_related_chords(scale)
+    primary_chords, secondary_chords, primary_triads, secondary_triads = key.get_related_chords(scale)
     # R_forearm['Note'], R_bicep['Note'], R_back['Note'] = primary_chords
     # L_forearm['Note'], L_bicep['Note'], L_back['Note'] = secondary_chords
     chords = primary_chords + secondary_chords
@@ -55,8 +52,8 @@ def init_globals():
     # Number of octaves
     for octave_range in range(2, 7):
         # Notes in each octave
-        for note_selection in base_note.notes:
-            number = (base_note.notes.index(note_selection)) + (octave_range * 12)
+        for note_selection in key.notes:
+            number = (key.notes.index(note_selection)) + (octave_range * 12)
             notes_dict[f'{note_selection}{octave_range - 2}'] = number
     # print(notes_dict)
 def begin_monitoring():
@@ -91,18 +88,17 @@ def begin_monitoring():
             device_emg_data = {}
             device_const_stream = {}
             reverse_notes = False
-            musical_queue = []
+
             for dev in device_dict.keys():
                 device_emg_data[dev] = []
                 device_const_stream[dev] = 0
-            print(device_emg_data)
             print(mido.get_output_names())
             output = mido.open_output('loopMIDI Port 1')
             # input = mido.open_input('virtualMidi 0')
             time_start = datetime.now().timestamp()
             print(f'Starting a 90 second monitoring window from {time_start}')
             while True:
-
+                musical_queue = []
                 if datetime.now().timestamp() - time_start < 90:
                     cnt = ser.in_waiting
                     if (cnt > 0):
@@ -140,6 +136,7 @@ def begin_monitoring():
                                         active_device_count = sum(1 for device_num, device_values in device_dict.items() if device_values['Active'])
                                         if active_device_count <= 1:
                                             if not active_device['Playing']:
+
                                                 play_note(music_value, active_device['Channel'], output)
                                                 active_device['Playing'] = True
                                             # change_volume(device_emg_data, active_device, buffer_value, output)
@@ -149,13 +146,20 @@ def begin_monitoring():
                                             #     add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
                                         else:
                                             musical_queue = [device_values['Chord'] for device_num, device_values in device_dict.items() if device_values['Playing']]
+                                            active_music = [(device_values['Chord'], device_values['Channel']) for device_num, device_values in device_dict.items() if device_values['Playing']]
+                                            playing_device_count = sum(1 for device_num, device_values in device_dict.items() if device_values['Playing'])
+                                            if playing_device_count < 2:
+                                                for active_note, channel in active_music:
+                                                    turn_note_off(active_note, channel, output)
                                             if not active_device['Playing']:
                                                 musical_queue.append(active_device['Chord'])
                                                 active_device['Playing'] = True
                                             print(musical_queue)
 
-                                            # for chord in musical_queue:
-                                            #     arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data[active_device['Device ID']])
+                                            for chord in musical_queue:
+                                                arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data, active_device=active_device)
+
+                                            # print(device_emg_data[active_device['Device ID']])
                                     else:
                                         if active_device['Active']:
                                             if active_device_count > 1:
@@ -246,13 +250,16 @@ def add_flourish(dev, active_device, output, ser, device_emg_data):
     ser.reset_input_buffer()
     device_emg_data[active_device['Device ID']] = []
 
-def arpeggiate(chord, channel, output, ser, device_emg_data, velocity=127):
+def arpeggiate(chord, channel, output, ser, device_emg_data, active_device):
     for note in chord:
         play_note(note, channel, output)
-        time.sleep(.5)
+        time.sleep(.25)
         turn_note_off(note, channel, output)
-        ser.reset_input_buffer()
-        device_emg_data = []
+    ser.reset_input_buffer()
+    active_device['Playing'] = False
+    device_emg_data[active_device['Device ID']] = []
+
+
 def main():
     init_globals()
     main_layout = [[sg.Button('Begin monitoring', key='-Begin-')],

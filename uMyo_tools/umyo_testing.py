@@ -9,7 +9,8 @@ port = list(list_ports.comports())
 print("available ports:")
 for p in port:
     print(p.device)
-    device = p.device
+    if p.device == 'COM3':
+        device = p.device
 print("===")
 
 #read
@@ -29,7 +30,7 @@ while(1):
         parse_unproc_cnt = umyo_parser.umyo_parse_preprocessor(data)
         dat_id = display_stuff.plot_prepare(umyo_parser.umyo_get_list())
         umyos = [dev.unit_id for dev in umyo_parser.umyo_get_list()]
-        print(umyos)
+        # print(umyos)
 
         d_diff = 0
         if(not (dat_id is None)):

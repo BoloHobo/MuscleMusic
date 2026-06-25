@@ -1,7 +1,7 @@
 import sys
 import os
-project_dir = os.path.dirname(os.path.dirname(__file__))
-package_dir = os.path.join(project_dir, 'uMyo_python_tools-main')
+project_dir = os.path.dirname(__file__)
+package_dir = os.path.join(project_dir, 'uMyo_tools')
 sys.path.append(package_dir)
 import umyo_parser
 
@@ -11,7 +11,8 @@ port = list(list_ports.comports())
 print("available ports:")
 for p in port:
     print(p.device)
-    device = p.device
+    if p.device == 'COM3':
+        device = p.device
 print("===")
 
 #read
@@ -33,8 +34,11 @@ while(1):
         cnt = len(devices)
         if (cnt < 1): continue
         for dev in devices:
-            val = dev.device_spectr[1]
+            # val = vars(dev)
+            val = dev.roll
+            print(val)
 
+        # break
         # for x in range(devices[0].data_count):
         #     val = devices[0].data_array[x]
         #     print(val)

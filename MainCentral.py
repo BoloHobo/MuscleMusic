@@ -3,6 +3,8 @@ import math
 import sys
 import os
 import PySimpleGUI as sg
+from PyQt6.QtCore import QThreadPool, QObject, pyqtSignal, QRunnable, pyqtSlot, QThread
+from PyQt6.QtWidgets import QMainWindow, QApplication, QPushButton, QVBoxLayout, QWidget, QLabel
 from numpy.ma.extras import average
 
 project_dir = os.path.dirname(__file__)
@@ -56,129 +58,6 @@ def init_globals():
             number = (key.notes.index(note_selection)) + (octave_range * 12)
             notes_dict[f'{note_selection}{octave_range - 2}'] = number
     # print(notes_dict)
-def begin_monitoring():
-    global device_dict, scale
-    monitoring_layout = [[sg.Button('Start', key='-start-')],
-                         [sg.Button('Stop', key='-stop-')]]
-    monitoring_window = sg.Window('Monitoring Window', monitoring_layout)
-    # Look for serial ports
-    port = list(list_ports.comports())
-    print("available ports:")
-    for p in port:
-        print(p.device)
-        # Basically sets last port as the device we're looking for
-        if p.device == 'COM3':
-            device = p.device
-    if not device:
-        print(f'device not found')
-    print("===")
-    # Initializes the serial device
-    ser = serial.Serial(port=device, baudrate=921600, parity=serial.PARITY_NONE, stopbits=1, bytesize=8, timeout=0)
-    print("conn: " + ser.portstr)
-
-    # Starts the EMG measurement loop
-    while True:
-        event, values = monitoring_window.read()
-        if event in (sg.WIN_CLOSED, 'Exit'):
-            break
-        elif event == '-stop-':
-            break
-        elif event == '-start-':
-            total_uMyo_emg = []
-            device_emg_data = {}
-            device_const_stream = {}
-            reverse_notes = False
-
-            for dev in device_dict.keys():
-                device_emg_data[dev] = []
-                device_const_stream[dev] = 0
-            print(mido.get_output_names())
-            output = mido.open_output('loopMIDI Port 1')
-            # input = mido.open_input('virtualMidi 0')
-            time_start = datetime.now().timestamp()
-            print(f'Starting a 90 second monitoring window from {time_start}')
-            while True:
-                musical_queue = []
-                if datetime.now().timestamp() - time_start < 90:
-                    cnt = ser.in_waiting
-                    if (cnt > 0):
-                        # Begins reading COM data
-                        data = ser.read(cnt)
-                        # Begins parsing COM data
-                        umyo_parser.umyo_parse_preprocessor(data)
-                        # Gathers all uMyo devices
-                        devices = umyo_parser.umyo_get_list()
-                        cnt = len(devices)
-                        # Don't measure unless there's something to measure
-                        if (cnt < 1): continue
-                        # Loops through all devices to grab spcgm data specifically
-                        for dev in devices:
-                            device_id = dev.unit_id
-                            if device_id not in device_dict.keys():
-                                continue
-                            active_device = device_dict[device_id]
-                            emg_measurement = dev.device_spectr[1]
-                            device_emg_data[active_device['Device ID']].append(emg_measurement)
-                            total_uMyo_emg.append((device_id, emg_measurement))
-                            buffer_length = 45
-                            try:
-                            # Verifies buffer size is met in data stream
-                                if len(device_emg_data[active_device['Device ID']]) > buffer_length:
-                                    # Sets buffer values
-                                    buffer = device_emg_data[active_device['Device ID']][len(device_emg_data[active_device['Device ID']])-buffer_length:]
-                                    # Checks if muscle is flexing based on buffer average
-                                    buffer_value = sum(buffer)/len(buffer)
-                                    music_value = active_device['Chord']
-                                    active_device_count = 0
-                                    if buffer_value > 300:
-                                        if not active_device['Active']:
-                                            active_device['Active'] = True
-                                        active_device_count = sum(1 for device_num, device_values in device_dict.items() if device_values['Active'])
-                                        if active_device_count <= 1:
-                                            if not active_device['Playing']:
-
-                                                play_note(music_value, active_device['Channel'], output)
-                                                active_device['Playing'] = True
-                                            # change_volume(device_emg_data, active_device, buffer_value, output)
-                                            # Flip switch to track consecutive flexion sustain
-                                            # device_const_stream[device_id] += 1
-                                            # if device_const_stream[device_id] > 500:
-                                            #     add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
-                                        else:
-                                            musical_queue = [device_values['Chord'] for device_num, device_values in device_dict.items() if device_values['Playing']]
-                                            active_music = [(device_values['Chord'], device_values['Channel']) for device_num, device_values in device_dict.items() if device_values['Playing']]
-                                            playing_device_count = sum(1 for device_num, device_values in device_dict.items() if device_values['Playing'])
-                                            if playing_device_count < 2:
-                                                for active_note, channel in active_music:
-                                                    turn_note_off(active_note, channel, output)
-                                            if not active_device['Playing']:
-                                                musical_queue.append(active_device['Chord'])
-                                                active_device['Playing'] = True
-                                            print(musical_queue)
-
-                                            for chord in musical_queue:
-                                                arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data, active_device=active_device)
-
-                                            # print(device_emg_data[active_device['Device ID']])
-                                    else:
-                                        if active_device['Active']:
-                                            if active_device_count > 1:
-                                                del musical_queue[musical_queue.index(active_device['Chord'])]
-                                            turn_note_off(music_value, active_device['Channel'], output)
-                                            device_const_stream[device_id] = 0
-                                            active_device['Active'] = False
-                                            active_device['Playing'] = False
-                            except Exception as e:
-                                print(f'Error occurred: {e}')
-
-
-                else:
-                    break
-            for device in device_dict.values():
-                if device['Active']:
-                    turn_note_off(device['Note'], device['Channel'], output)
-            output.close()
-    return total_uMyo_emg
 
 def play_note(music, channel, output_reader, velocity=127):
     if isinstance(music, list):
@@ -205,7 +84,7 @@ def turn_note_off(music, channel, output_reader, velocity=127):
 def modify_note(change_type, channel, output_reader, control_val=None, value=0):
     if control_val:
         note_mod = mido.Message(change_type, channel=channel, control=control_val, value=value)
-    output_reader.send(note_mod)
+        output_reader.send(note_mod)
 
 def flourish(base_note, channel, output, pivot_scale, flip_melody=False):
     pivot_key = base_note[0]
@@ -250,10 +129,10 @@ def add_flourish(dev, active_device, output, ser, device_emg_data):
     ser.reset_input_buffer()
     device_emg_data[active_device['Device ID']] = []
 
-def arpeggiate(chord, channel, output, ser, device_emg_data, active_device):
+def arpeggiate(chord, channel, output, ser, device_emg_data, active_device, sleep_time):
     for note in chord:
         play_note(note, channel, output)
-        time.sleep(.25)
+        time.sleep((1/sleep_time))
         turn_note_off(note, channel, output)
     ser.reset_input_buffer()
     active_device['Playing'] = False
@@ -261,20 +140,225 @@ def arpeggiate(chord, channel, output, ser, device_emg_data, active_device):
 
 
 def main():
-    init_globals()
-    main_layout = [[sg.Button('Begin monitoring', key='-Begin-')],
-              [sg.Button('Save Results', key='-Save-')]]
-    main_window = sg.Window('Music with Movement', main_layout)
-    while True:
-        event, values = main_window.read()
-        if event in (sg.WIN_CLOSED, 'Exit'):
-            break
-        elif event == '-Begin-':
-            try:
-                results = begin_monitoring()
-                print(results)
-            except Exception as e:
-                print(f'Error occurred in the window loop: {e}')
+    try:
+        app = QApplication(sys.argv)
+        window = mainWindow()
+        window.show()
+        app.exec()
+    except Exception as e:
+        print(f'Error occurred in main loop: {e}')
+
+class mainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Musicle")
+        self.worker = None
+        self.thread = None
+        self.monitoring = False
+        vlayout = QVBoxLayout()
+        self.begin_monitoring_button = QPushButton('Begin monitoring')
+        self.begin_monitoring_button.clicked.connect(self.begin_monitoring)
+
+        self.monitoring_label = QLabel()
+
+        self.stop_monitoring_button = QPushButton('Stop monitoring')
+        self.stop_monitoring_button.clicked.connect(self.stop_monitoring)
+
+        vlayout.addWidget(self.begin_monitoring_button)
+        vlayout.addWidget(self.monitoring_label)
+        vlayout.addWidget(self.stop_monitoring_button)
+
+        widget = QWidget()
+        widget.setLayout(vlayout)
+        self.setCentralWidget(widget)
+
+    def stop_monitoring(self):
+        if self.worker is not None:
+            self.worker.stop_run()
+
+    def find_device(self):
+        # Look for serial ports
+        ports = list(list_ports.comports())
+        print("available ports:")
+        device = None
+        for port in ports:
+            print(port.device)
+            # Basically sets last port as the device we're looking for
+            if port.device == 'COM3':
+                device = port.device
+        if not device:
+            print(f'device not found')
+            return
+        print("===")
+        # Initializes the serial device
+        ser = serial.Serial(port=device, baudrate=921600, parity=serial.PARITY_NONE, stopbits=1, bytesize=8, timeout=0)
+        print("conn: " + ser.portstr)
+        return ser
+
+    def begin_monitoring(self):
+        init_globals()
+
+        if self.thread is not None and self.thread.isRunning():
+            return
+        device = self.find_device()
+        if not device:
+            print('Plug in serial USB. ')
+            return
+        self.thread = QThread()
+        self.worker = MainWorker(serial_device=device)
+        try:
+            self.worker.moveToThread(self.thread)
+            self.thread.started.connect(self.worker.run)
+            self.worker.progress_label.connect(self.update_label)
+            self.worker.finished.connect(self.finish_task)
+            self.worker.error.connect(self.update_label)
+            self.thread.finished.connect(self.thread.deleteLater)
+            self.worker.finished.connect(self.worker.deleteLater)
+        except Exception as w_e:
+            print(f'Error occurred in threading: {w_e}')
+
+        self.thread.start()
+
+    def update_label(self, value=None):
+        self.monitoring_label.setText(str(value))
+
+    def finish_task(self):
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait()
+            self.thread = None
+            self.worker = None
+
+class MainWorker(QObject):
+    progress_label = pyqtSignal(str)
+    error = pyqtSignal(Exception)
+    finished = pyqtSignal()
+
+    def __init__(self, serial_device):
+        super().__init__()
+        self.monitoring = False
+        self.ser = serial_device
+
+    def run(self):
+        global device_dict, scale
+        self.monitoring = True
+        ser = self.ser
+        #
+        # Starts the EMG measurement loop
+        total_uMyo_emg = []
+        device_emg_data = {}
+        device_const_stream = {}
+        reverse_notes = False
+        for dev in device_dict.keys():
+            device_emg_data[dev] = []
+            device_const_stream[dev] = 0
+        print(mido.get_output_names())
+        output = mido.open_output('loopMIDI Port 1')
+        # input = mido.open_input('virtualMidi 0')
+        while self.monitoring:
+            musical_queue = []
+            cnt = ser.in_waiting
+            if (cnt > 0):
+                # Begins reading COM data
+                data = ser.read(cnt)
+                # Begins parsing COM data
+                umyo_parser.umyo_parse_preprocessor(data)
+                # Gathers all uMyo devices
+                devices = umyo_parser.umyo_get_list()
+                cnt = len(devices)
+                # Don't measure unless there's something to measure
+                if (cnt < 1): continue
+                # Loops through all devices to grab spcgm data specifically
+                for dev in devices:
+                    device_id = dev.unit_id
+                    if device_id not in device_dict.keys():
+                        continue
+                    active_device = device_dict[device_id]
+                    emg_measurement = dev.device_spectr[1]
+                    device_emg_data[device_id].append(emg_measurement)
+                    total_uMyo_emg.append((device_id, emg_measurement))
+                    buffer_length = 45
+                    try:
+                        # Verifies buffer size is met in data stream
+                        if len(device_emg_data[device_id]) > buffer_length:
+                            # Sets buffer values
+                            buffer = device_emg_data[device_id][
+                                     len(device_emg_data[device_id]) - buffer_length:]
+                            # Checks if muscle is flexing based on buffer average
+                            buffer_value = sum(buffer) / len(buffer)
+                            music_value = active_device['Chord']
+                            active_device_count = 0
+                            if buffer_value > 300:
+                                if not active_device['Active']:
+                                    active_device['Active'] = True
+                                active_device_count = sum(1 for device_num, device_values in device_dict.items() if
+                                                          device_values['Active'])
+                                if active_device_count <= 1:
+                                    if not active_device['Playing']:
+                                        play_note(music_value, active_device['Channel'], output)
+                                        active_device['Playing'] = True
+                                    # change_volume(device_emg_data, active_device, buffer_value, output)
+                                    # Flip switch to track consecutive flexion sustain
+                                    # device_const_stream[device_id] += 1
+                                    # if device_const_stream[device_id] > 500:
+                                    #     add_flourish(dev=dev, active_device=active_device, output=output, ser=ser, device_emg_data=device_emg_data)
+                                else:
+                                    musical_queue = [device_values['Chord'] for device_num, device_values in
+                                                     device_dict.items() if device_values['Playing']]
+                                    active_music = [(device_values['Chord'], device_values['Channel']) for
+                                                    device_num, device_values in device_dict.items() if
+                                                    device_values['Playing']]
+                                    playing_device_count = sum(
+                                        1 for device_num, device_values in device_dict.items() if
+                                        device_values['Playing'])
+                                    if playing_device_count < 2:
+                                        for active_note, channel in active_music:
+                                            turn_note_off(active_note, channel, output)
+                                    if not active_device['Playing']:
+                                        musical_queue.append(active_device['Chord'])
+                                        active_device['Playing'] = True
+                                    print(musical_queue)
+
+                                    for chord in musical_queue:
+                                        arpeggiate(chord, 15, output, ser=ser, device_emg_data=device_emg_data,
+                                                   active_device=active_device, sleep_time = active_device_count)
+
+                                    # print(device_emg_data[active_device['Device ID']])
+                            else:
+                                if active_device['Active']:
+                                    if active_device_count > 1:
+                                        del musical_queue[musical_queue.index(active_device['Chord'])]
+                                    turn_note_off(music_value, active_device['Channel'], output)
+                                    device_const_stream[device_id] = 0
+                                    active_device['Active'] = False
+                                    active_device['Playing'] = False
+                    except Exception as e:
+                        print(f'Error occurred: {e}')
+        for device in device_dict.values():
+            if device['Active']:
+                turn_note_off(device['Note'], device['Channel'], output)
+        output.close()
+
+    def stop_run(self):
+        self.monitoring = False
+        self.finished.emit()
+
+# class Worker(QRunnable):
+#     def __init__(self, fn, *args, **kwargs):
+#         super().__init__()
+#         self.function = fn
+#         self.args = args
+#         self.kwargs = kwargs
+#         self.signals = WorkerSignals()
+#
+#     @pyqtSlot()
+#     def run(self):
+#         try:
+#             self.function(**self.kwargs)
+#         except Exception as e:
+#             self.signals.error.emit(e)
+#         finally:
+#             self.signals.finished.emit('Finished')
 
 if __name__ == '__main__':
     main()
